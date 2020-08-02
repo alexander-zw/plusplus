@@ -1,20 +1,20 @@
-/// Main file to translate markdown into HTML.
+/// Main file that handles terminal arguments.
+mod tokenizer;
+mod compiler;
+
 use std::fs::File;
 use std::io::Write;
-
-mod tokenizer;
+use crate::tokenizer::Tokenizer;
+use crate::compiler::Compiler;
 
 fn compile_pp_file(filename: &str) {
     print_title();
     println!("[ INFO ] Trying to open {}...", filename);
-    let mut tokenizer = tokenizer::Tokenizer::new(filename);
+    let tokenizer = Tokenizer::new(filename);
 
     println!("[ INFO ] Compiling {}...", filename);
-    let statement = tokenizer.tokenize_next_statement();
-    println!("TOKENS:");
-    for token in statement {
-        println!("{}", token);
-    }
+    let mut compiler = Compiler::new(tokenizer);
+    compiler.compile();
 
     let mut output_filename = String::from(&filename[..filename.len()-2]);
     output_filename.push_str("js");
