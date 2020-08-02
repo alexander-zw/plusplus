@@ -1,0 +1,11 @@
+[package]
+name = "plusplus"
+version = "0.1.0"
+authors = ["Alexander Wu <alexanderwu68@yahoo.com>"]
+edition = "2018"
+description = "A JavaScript compiler for the ++ programming language"
+homepage = "https://alexander-zw.github.io"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
