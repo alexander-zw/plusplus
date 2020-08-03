@@ -1,7 +1,8 @@
 /**
  * Reads files and tokenizes text into tokens. A token is a continuous string of
  * text consisting of only alphanumeric characters and underscores, or only
- * non-underscore punctuation, and no whitespace.
+ * non-underscore punctuation, and no whitespace. Non-ASCII characters are
+ * treated as whitespace.
  * 
  * Saves the original text and location of each token within the original text.
  * Provides an interface to replace tokens in the original text with new tokens.
@@ -12,9 +13,11 @@ use std::io::{BufRead, BufReader, Lines};
 
 #[derive(PartialEq)]
 enum TokenType {
-    IDENTIFIER, // alphanumerical or underscore
-    SYMBOL, // any punctuation that isn't underscore
-    NONE,
+    Identifier, // Alphanumerical or underscore.
+    Symbol, // Any punctuation that isn't underscore.
+    BlockComment, // We are in the middle of a block comment.
+    LineComment, // We are in the middle of a single-line comment.
+    None, // We just finished a token, and the next character is a new one (or whitespace).
 }
 
 struct Token {
@@ -49,7 +52,7 @@ impl Tokenizer {
             lines: reader.lines(),
             text: String::new(),
             next_statement: Vec::new(),
-            last_token_type: TokenType::NONE,
+            last_token_type: TokenType::None,
             next_index: 0,
         }
     }
@@ -62,9 +65,8 @@ impl Tokenizer {
     pub fn tokenize_next_statement(&mut self) -> bool {
         self.next_statement = Vec::new();
         loop {
-            let lines_next = self.lines.next();
             let line: String;
-            match lines_next {
+            match self.lines.next() {
                 Some(l) => line = l.unwrap(),
                 None => return true,
             }
@@ -83,13 +85,27 @@ impl Tokenizer {
     /// Returns whether we have found the end of a statement (";", "{", and "}").
     fn tokenize_line(&mut self, line: String) -> bool {
         let mut end_statement = false;
+        let mut last_char_is_star = false; // Used to identify "*/".
         let mut token = Token::new();
         token.start = self.next_index;
         for c in line.chars() {
-            let next_token_type = Tokenizer::token_type(c);
-            if next_token_type == TokenType::NONE {
+            if self.last_token_type == TokenType::LineComment {
+                break; // Ignore the rest of this line.
+            }
+            if self.last_token_type == TokenType::BlockComment {
+                // Scan the line for "*/" but ignore anything else until comment is closed.
+                if c == '/' && last_char_is_star {
+                    self.last_token_type = TokenType::None;
+                }
+                last_char_is_star = c == '*';
+                self.next_index += 1;
+                continue;
+            }
+
+            let next_token_type = Tokenizer::char_token_type(c);
+            if next_token_type == TokenType::None {
                 // Ignore whitespace, except that it denotes the end of a token.
-                self.last_token_type = TokenType::NONE;
+                self.last_token_type = TokenType::None;
                 self.next_index += 1;
                 continue;
             }
@@ -109,34 +125,104 @@ impl Tokenizer {
 
             self.next_index += 1;
             if Tokenizer::is_end_symbol(c) {
+                self.last_token_type = TokenType::Symbol;
                 end_statement = true;
                 break;
             }
         }
-        // the end of a line always means the token has ended
-        self.add_token(token, TokenType::NONE);
+        match self.last_token_type {
+            // If block comment, do nothing.
+            TokenType::BlockComment => (),
+            // If single-line comment, don't add a token, but end the comment.
+            TokenType::LineComment => self.last_token_type = TokenType::None,
+            // Otherwise, the end of a line always means the token has ended.
+            _ => self.add_token(token, TokenType::None),
+        }
 
         end_statement
     }
 
+    /// Before adding, handles comments and empty tokens. Sets token type.
     fn add_token(&mut self, token: Token, token_type: TokenType) {
         self.last_token_type = token_type;
-        if !token.value.is_empty() {
-            self.next_statement.push(token);
+        let stripped_tokens = self.strip_comments(token);
+        for t in stripped_tokens {
+            if !t.value.is_empty() {
+                self.next_statement.push(t);
+            }
         }
     }
 
-    fn token_type(c: char) -> TokenType {
+    /**
+     * Removes parts of the token that are comments and sets self.last_token_type
+     * appropriately. If block comments separate the token, splits token into
+     * multiple tokens.
+     */
+    fn strip_comments(&mut self, mut token: Token) -> Vec<Token> {
+        // First remove all block comments, taking care to handle the "//*" case.
+        let mut stripped_tokens = Vec::new();
+        while !token.value.is_empty() {
+            let block_comment_start: usize;
+            match token.value.find("/*") {
+                Some(i) => block_comment_start = i,
+                None => break,
+            }
+            let token_chars: Vec<char> = token.value.chars().collect();
+            if block_comment_start != 0 && token_chars[block_comment_start - 1] == '/' {
+                break; // This "/*" is actually part of "//*", skip.
+            }
+
+            let block_comment_end; // Index of first character after "*/".
+            match Tokenizer::find_substring(&token.value, "*/", block_comment_start + 2) {
+                Some(i) => block_comment_end = i + 2,
+                None => {
+                    self.last_token_type = TokenType::BlockComment;
+                    break;
+                },
+            }
+            stripped_tokens.push(Token {
+                value: token.value[..block_comment_start].to_string(),
+                start: token.start,
+            });
+            token = Token {
+                value: token.value[block_comment_end..].to_string(),
+                start: block_comment_end,
+            };
+        }
+        // Then find the "//" and ignore anything after it, if we are not in a block comment.
+        if self.last_token_type != TokenType::BlockComment {
+            match token.value.find("//") {
+                Some(line_comment_start) => {
+                    self.last_token_type = TokenType::LineComment;
+                    token.value = token.value[..line_comment_start].to_string();
+                },
+                None => (),
+            }
+            stripped_tokens.push(token);
+        }
+
+        stripped_tokens
+    }
+
+    /// Based on the character returns the guessed token type (does not handle comments).
+    fn char_token_type(c: char) -> TokenType {
         if c.is_ascii_alphanumeric() || c == '_' {
-            TokenType::IDENTIFIER
+            TokenType::Identifier
         } else if c.is_ascii_punctuation() {
-            TokenType::SYMBOL
+            TokenType::Symbol
         } else {
-            TokenType::NONE
+            TokenType::None
         }
     }
 
     fn is_end_symbol(c: char) -> bool {
         return c == ';' || c == '{' || c == '}';
+    }
+
+    fn find_substring(string: &String, target: &str, start: usize) -> Option<usize> {
+        // get() and find() both return an option, so we need to unwrap once.
+        string.get(start..)
+              .map(|s| s.find(target).map(|i| start + i))
+              .unwrap_or(None)
     }
 }
