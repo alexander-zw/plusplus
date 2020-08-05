@@ -3,17 +3,17 @@
  * of practical ++ code.
  */
 
-/**/$//* The /*
+/**/$$$//* The /*
 hello=1 /* ; /// Friday
 before */ ; $there; //$winter break,
-hello = "my mom packed me";$general="a few deadly weapons"
-/* and took me to a new boarding
+hello = "my mom packed me";$$general="a few deadly weapons"/*
+  and took me to a new boarding
 school.*/;*kenobi(
 you
     ){~"We picked up my friends " + you}console
 
 .log(kenobi("Annabeth and Thalia along the way.") + hello)/**/;/*/.*?-`~+///*/$///*.@*/*//
-are=there;
+are=general;
 
 /*
 It was an eight-hour drive from New York to Bar Harbor, Maine. Sleet and snow pounded the

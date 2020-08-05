@@ -1,11 +1,14 @@
 /**
  * Reads files and tokenizes text into tokens. A token is a continuous string of
- * text consisting of only alphanumeric characters and underscores, or only
- * non-underscore punctuation, and no whitespace. Non-ASCII characters are
- * treated as whitespace.
+ * text consisting of only alphanumeric characters and underscores, or one
+ * non-underscore punctuation. Whitespace, comments, and Non-ASCII characters are
+ * not part of tokens and only serve to separate tokens.
  * 
  * Saves the original text and location of each token within the original text.
  * Provides an interface to replace tokens in the original text with new tokens.
+ * 
+ * Although some characters together for a keyword, the tokenizer treats them as
+ * separate tokens for ease of implementation.
  */
 use std::path::Path;
 use std::fs::File;
@@ -70,7 +73,7 @@ impl Tokenizer {
                 Some(l) => line = l.unwrap(),
                 None => return true,
             }
-            self.text.push_str(&line);
+            self.text.push_str(&format!("{}\n", &line));
             if self.tokenize_line(line) {
                 break;
             }
@@ -82,15 +85,14 @@ impl Tokenizer {
         false
     }
 
-    /// Returns whether we have found the end of a statement (";", "{", and "}").
     fn tokenize_line(&mut self, line: String) -> bool {
         let mut end_statement = false;
         let mut last_char_is_star = false; // Used to identify "*/".
         let mut token = Token::new();
-        token.start = self.next_index;
         for c in line.chars() {
             if self.last_token_type == TokenType::LineComment {
-                break; // Ignore the rest of this line.
+                self.next_index += 1;
+                continue; // The rest of this line will be ignored, but increment index.
             }
             if self.last_token_type == TokenType::BlockComment {
                 // Scan the line for "*/" but ignore anything else until comment is closed.
@@ -111,7 +113,9 @@ impl Tokenizer {
             }
 
             if next_token_type == self.last_token_type {
-                // We are continuing the same token, either an identifier or symbol.
+                /* We are continuing the same token, either an identifier or symbol.
+                   For now, treat consecutive symbols as a single token, but
+                   separate before adding them. */
                 token.value.push(c);
             } else {
                 /* We are starting a new token, either because we went from identifier
@@ -138,17 +142,34 @@ impl Tokenizer {
             // Otherwise, the end of a line always means the token has ended.
             _ => self.add_token(token, TokenType::None),
         }
+        self.next_index += 1; // Account for newline at end.
 
         end_statement
     }
 
-    /// Before adding, handles comments and empty tokens. Sets token type.
+    /**
+     * For symbol tokens, first strips out comments, then separates symbols into single
+     * tokens. Then adds them to tokenizer. Ignores empty tokens. Sets token type.
+     */
     fn add_token(&mut self, token: Token, token_type: TokenType) {
         self.last_token_type = token_type;
+        if token.value.is_empty() {
+            return;
+        }
+        let first_char = token.value.chars().next().unwrap();
+        if Tokenizer::char_token_type(first_char) != TokenType::Symbol {
+            self.next_statement.push(token);
+            return;
+        }
+
         let stripped_tokens = self.strip_comments(token);
         for t in stripped_tokens {
-            if !t.value.is_empty() {
-                self.next_statement.push(t);
+            // Separate string of symbols into individual char tokens.
+            for (i, c) in t.value.chars().enumerate() {
+                self.next_statement.push(Token {
+                    value: c.to_string(),
+                    start: t.start + i,
+                });
             }
         }
     }
@@ -186,7 +207,7 @@ impl Tokenizer {
             });
             token = Token {
                 value: token.value[block_comment_end..].to_string(),
-                start: block_comment_end,
+                start: token.start + block_comment_end,
             };
         }
         // Then find the "//" and ignore anything after it, if we are not in a block comment.
@@ -204,7 +225,10 @@ impl Tokenizer {
         stripped_tokens
     }
 
-    /// Based on the character returns the guessed token type (does not handle comments).
+    /**
+     * Based on the character returns the guessed token type: Identifier, Symbol, or None
+     * (whitespace). Does not handle comments.
+     */
     fn char_token_type(c: char) -> TokenType {
         if c.is_ascii_alphanumeric() || c == '_' {
             TokenType::Identifier
@@ -215,6 +239,7 @@ impl Tokenizer {
         }
     }
 
+    /// Returns whether we have found the end of a statement (";", "{", and "}").
     fn is_end_symbol(c: char) -> bool {
         return c == ';' || c == '{' || c == '}';
     }

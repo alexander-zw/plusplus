@@ -7,4 +7,4 @@ translates ++ into JavaScript.
 The current compiler has some limitations: semicolons and braces are required,
 at the end of a statement and to denote a branch or loop block respectively.
 
-TODO: tokenizing, symbols, keyword identifier
+TODO: replacing tokens, symbols, keyword identifier
