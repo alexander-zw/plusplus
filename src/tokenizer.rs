@@ -13,8 +13,11 @@
 use std::path::Path;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Lines};
+use std::fmt::Display;
+use std::fmt::Formatter;
+use std::fmt::Result;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 enum TokenType {
     Identifier, // Alphanumerical or underscore.
     Symbol, // Any punctuation that isn't underscore.
@@ -26,13 +29,38 @@ enum TokenType {
 struct Token {
     value: String,
     start: usize,
+    token_type: TokenType,
+}
+
+impl Display for TokenType {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        match self {
+            TokenType::Identifier => {
+                write!(f, "Identifier")
+            }
+            TokenType::Symbol => {
+                write!(f, "Symbol")
+            }
+            TokenType::BlockComment => {
+                write!(f, "BlockComment")
+            }
+            TokenType::LineComment => {
+                write!(f, "LineComment")
+            }
+            TokenType::None => {
+                write!(f, "None")
+            }
+        }
+    }
 }
 
 impl Token {
+     // start and token_type should be updated later.
     fn new() -> Self {
         Token {
             value: String::new(),
-            start: 0, // Can be updated later.
+            start: 0,
+            token_type: TokenType::None,
         }
     }
 }
@@ -80,7 +108,7 @@ impl Tokenizer {
         }
 
         for t in &self.next_statement {
-            println!("{}, {}", t.value, t.start);
+            println!("{}, {}, {}", t.value, t.start, t.token_type);
         }
         false
     }
@@ -120,10 +148,11 @@ impl Tokenizer {
             } else {
                 /* We are starting a new token, either because we went from identifier
                    to symbol, vice versa, or the last char was whitespace. */
-                self.add_token(token, next_token_type);
+                self.add_token(token, next_token_type.clone());
                 token = Token {
                     value: c.to_string(),
                     start: self.next_index,
+                    token_type: next_token_type,
                 };
             }
 
@@ -151,8 +180,8 @@ impl Tokenizer {
      * For symbol tokens, first strips out comments, then separates symbols into single
      * tokens. Then adds them to tokenizer. Ignores empty tokens. Sets token type.
      */
-    fn add_token(&mut self, token: Token, token_type: TokenType) {
-        self.last_token_type = token_type;
+    fn add_token(&mut self, token: Token, next_token_type: TokenType) {
+        self.last_token_type = next_token_type;
         if token.value.is_empty() {
             return;
         }
@@ -169,6 +198,7 @@ impl Tokenizer {
                 self.next_statement.push(Token {
                     value: c.to_string(),
                     start: t.start + i,
+                    token_type: t.token_type.clone(),
                 });
             }
         }
@@ -204,10 +234,12 @@ impl Tokenizer {
             stripped_tokens.push(Token {
                 value: token.value[..block_comment_start].to_string(),
                 start: token.start,
+                token_type: token.token_type.clone(),
             });
             token = Token {
                 value: token.value[block_comment_end..].to_string(),
                 start: token.start + block_comment_end,
+                token_type: token.token_type,
             };
         }
         // Then find the "//" and ignore anything after it, if we are not in a block comment.
