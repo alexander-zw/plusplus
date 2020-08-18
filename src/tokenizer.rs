@@ -119,6 +119,8 @@ impl Tokenizer {
         let mut token = Token::new();
         for c in line.chars() {
             if self.last_token_type == TokenType::LineComment {
+                println!("LINE COMMENT {}", c);
+                token.value.push(c);
                 self.next_index += 1;
                 continue; // The rest of this line will be ignored, but increment index.
             }
@@ -163,15 +165,16 @@ impl Tokenizer {
                 break;
             }
         }
-        match self.last_token_type {
-            // If block comment, do nothing.
-            TokenType::BlockComment => (),
-            // If single-line comment, don't add a token, but end the comment.
-            TokenType::LineComment => self.last_token_type = TokenType::None,
-            // Otherwise, the end of a line always means the token has ended.
-            _ => self.add_token(token, TokenType::None),
-        }
-        self.next_index += 1; // Account for newline at end.
+        // The end of a line always means the token has ended.
+        self.add_token(token, TokenType::None);
+
+        // Account for newline at end of line.
+        // self.add_token(Token {
+        //     value: "\n".to_string(),
+        //     start: self.next_index,
+        //     token_type: TokenType::None,
+        // }, TokenType::None);
+        self.next_index += 1;
 
         end_statement
     }
